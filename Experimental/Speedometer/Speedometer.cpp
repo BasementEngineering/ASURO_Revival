@@ -1,94 +1,122 @@
 #include "Speedometer.h"
 #include "Arduino.h"
 
-Speedometer::Speedometer(int Led, int leftSensor, int rightSensor):
-updateTimer(20,true)
+Speedometer::Speedometer(int sensorPin):
+updateTimer(10,true), stopWatch(500,true), calibrationTimer(5000,false)
 {
-  ledPin = Led;
-  leftPin = leftSensor;
-  rightPin = rightSensor;
-  pinMode(Led,OUTPUT);
-  pinMode(leftPin,INPUT);
-  pinMode(rightPin,INPUT);
+  updateTimer.start();
 
-  calibrating = false;
+  sensor = sensorPin;
+  pinMode(sensorPin,INPUT);
 
-  leftSpeed = 0;
-  leftMinReading = 1024;
-  leftMaxReading = 0;
-
-  rightSpeed = 0;
-  rightMinReading = 1024;
-  rightMaxReading = 0;
+  speed = 0;
+  minReading = 1024;
+  maxReading = 0;
+  
+  previousMark = NO_MARK_DETECTED;
 }
 
-int Speedometer::getLeftSpeed(void)
+int Speedometer::getSpeed(void) const
 {
-  return rightSpeed;
+  return speed;
 }
 
-int Speedometer::getRightSpeed(void)
+void Speedometer::calibrate(void)
 {
-  return leftSpeed;
+  Serial.println("Starting Calibration");
+  calibrationTimer.start();
+  stopWatch.stop();
 }
 
-int Speedometer::getSpeed(void){
-  return (leftSpeed + rightSpeed) / 2;
-}
-
-void enterCalibrationMode(void)
+bool Speedometer::isCalibrating(void)
 {
-  calibrating = true;
-}
-
-void endCalibrationMode(void)
-{
-  calibrating = false;
+  return calibrationTimer.isActive();
 }
 
 void Speedometer::update(void)
 {
   if(updateTimer.isFinished())
   {
-  int leftReading = analogRead(leftPin);
-  int rightReading = analogRead(rightPin);
+	  
+  int reading = analogRead(sensor);
 
-  if(!calibrating)
+  if(!calibrationTimer.isActive())
   {
-    
+	int mark = calculateMark(reading);
+    calculateSpeed(mark);
   }
   else
   {
-    setMinMaxValues(leftReading,rightReading);
+	if(!calibrationTimer.isFinished())
+	{
+		measureMinMaxValues(reading);
+    }
+	else
+    {
+	calibrationTimer.stop();
+    stopWatch.start();	
+    }
   }
   }
 }
 
-void setMinMaxValues(int leftReading, int rightReading)
+int Speedometer::calculateMark(int reading)
 {
-  if(leftReading < leftMinReading)
-    {
-      leftMinReading = leftReading;
+	int range = maxReading - minReading;
+	int correctedReading = reading - minReading;
+	
+	if(correctedReading > range * 0.8)
+	{
+		return WHITE_MARK;
     }
-    if(leftReading > leftMaxReading)
+	else if(correctedReading < range * 0.2)
+	{
+		return BLACK_MARK;
+    }
+	else
+	{
+	return NO_MARK_DETECTED;	
+	}	
+}
+
+void Speedometer::calculateSpeed(int mark)
+{
+	if(mark == NO_MARK_DETECTED)
+	{
+	  return;	
+	}	
+	
+	if(mark != previousMark)
+	{
+    Serial.println("Changed");
+	  previousMark = mark;
+	  if(!stopWatch.isFinished())
+      {
+	  unsigned long time = stopWatch.getRunTime();
+	  if(time != 0)
+	  {
+	  speed = stepDistance / time;	
+	  }
+	  }
+	  else
+	  {
+	  speed = 0;
+	  }
+	  stopWatch.reset();
+	}	
+}	
+
+void Speedometer::measureMinMaxValues(int reading)
+{
+  Serial.print("Reading: ");
+  Serial.println(reading);
+  if(reading < minReading)
     {
-      leftMaxReading = leftReading;
+      minReading = reading;
+    }
+    if(reading > maxReading)
+    {
+      maxReading = reading;
     }
     
-    if(rightReading < rightMinReading)
-    {
-      rightMinReading = rightReading;
-    }
-    if(rightReading > rightMaxReading)
-    {
-      rightMaxReading = rightReading;
-    }
 }
-
-int leftSpeed;
-int leftMinReading;
-int leftMaxReading;
-
-int rightSpeed;
-int rightMinReading;
-int rightMaxReading;

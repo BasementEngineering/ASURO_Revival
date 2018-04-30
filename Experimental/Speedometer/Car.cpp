@@ -45,31 +45,6 @@ void Car::update() {
   }
 }
 
-void Car::move(int direction)
-{
-  switch(direction)
-  {
-    case STOP: stop();
-    break;
-    case FORWARD: moveForward();
-    break;
-    case BACKWARD: moveBackward();
-    break;
-    case TURN_LEFT: turnLeft();
-    break;
-    case TURN_RIGHT: turnRight();
-    break;
-    case LEFT_BACKWARD: leftBackward();
-    break;
-    case LEFT_FORWARD: leftForward();
-    break;
-    case RIGHT_BACKWARD: rightBackward();
-    break;
-    case RIGHT_FORWARD: rightForward();
-    break;
-  }
-}
-
 void Car::setMaxSpeed(uint8_t newMaxSpeed){
   maxSpeed = newMaxSpeed;
 }

@@ -1,3 +1,7 @@
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+#include <SoftwareSerial.h>
 #include "Car.h"
 #include "LineFollower.h"
 #include "AutoPilot.h"
@@ -13,28 +17,32 @@ const int RightForward = 9;
 const int RightBackward = 10;
 
 //Speedometer
-const int OdometerLED = 3;
-const int LeftOdoSensor = A3;
-const int RightOdoSensor = A4;
+const int OdometerLED = 12;
+const int LeftOdoSensor = A6;
+const int RightOdoSensor = A7;
 
 //Switches
 const int Switches = A0;
-const int SwitchPullup = 4;
+const int SwitchPullup = 11;
 
 //Line Follower
-const int LineFollowerLED = 2;
-const int LeftLFSensor = A1;
-const int RightLFSensor = A2;
+const int LineFollowerLED = A1;
+const int LeftLFSensor = A2;
+const int RightLFSensor = A3;
 
-//#define DEBUG
-//#define DEBUG1
+#define SERIAL_DEBUG
+#define OLED_DEBUG
 const int DebugLED = 13;
 
 //Objects
+#define OLED_RESET 4
+Adafruit_SSD1306 display(OLED_RESET);
 Car car(LeftSpeed, LeftForward, LeftBackward, RightSpeed, RightForward, RightBackward);
 LineFollower lineFollower(LineFollowerLED, LeftLFSensor, RightLFSensor, 10);
 AutoPilot autoPilot(Switches, SwitchPullup);
+
 Timer signalTimeout(200);
+SoftwareSerial btModule(3, 2); // RX, TX
 
 //Global Variables
 enum modes {MANUAL_OPERATION,LINE_FOLLOWING,OBSTACLE_AVOIDING};
@@ -45,10 +53,8 @@ bool requestAvailable = false;
 String command = "";
 
 //Function Prototypes
-void startDebugSession();
-
 void sendDashboardData(void);
-void controlRobot(String input);
+void controlSystems(String input);
 void controlCar(String input);
 void setAutopilot(String input);
 void controlLights(String input);
@@ -56,7 +62,7 @@ void controlLights(String input);
 char direction = 'S';
 
 void setup() {
-
+  btModule.begin(9600);
   Serial.begin(9600);
   signalTimeout.start();
 
@@ -65,36 +71,82 @@ void setup() {
 #endif
 
 //lineFollower.calibrateSensors();
+display.begin(SSD1306_SWITCHCAPVCC, 0x3C);  // initialize with the I2C addr 0x3C (for the 128x32)
+display.clearDisplay();
 
+display.setTextColor(WHITE);
+display.setCursor(0,0);
+display.setTextSize(1);
+ display.println("Hello, world!");
+ display.display();
+ delay(2000);
 }
 
 void loop() {
-
   crashed = autoPilot.collisionDetected();
 
-  if(requestAvailable)
+if(btModule.available())
+{
+  String input = btModule.readStringUntil('X');
+  if(input == "status?")
   {
     sendDashboardData();
-    requestAvailable = false;
   }
-
-  if(commandAvailable)
+  else
   {
-    controlRobot(command);
-    commandAvailable = false;
+    printCommand();
+    command = input;   
+    controlSystems(command);
   }
-  
-  switch (mode) {
-    case MANUAL_OPERATION: if (crashed && direction == 'F'){
+  signalTimeout.reset();
+}
+updateCar();
+
+car.update();
+}
+
+void printCommand(void)
+{
+  static String previousCommand = "";
+  if(previousCommand != command)
+  {
+    previousCommand = command;
+  #ifdef SERIAL_DEBUG
+  Serial.print("Latest Command: ");
+  Serial.println(command);
+  #endif
+  #ifdef OLED_DEBUG
+  display.clearDisplay();
+  display.setCursor(0,0);
+  display.println("Latest Command: ");
+  display.println(command);
+  display.display();
+  #endif
+  }
+}
+
+void updateCar(void)
+{
+   switch (mode) {
+    case MANUAL_OPERATION: 
+      if (crashed && direction == 'F')
+      {
+        display.clearDisplay();
+        display.setCursor(0,0);
+        display.println("Crash!");
+         display.display();
         car.stop();
       }
-      if (signalTimeout.isFinished()) {
+      if (signalTimeout.isFinished()) 
+      {
         car.stop();
         direction = 'S';
         signalTimeout.stop();
       }
       break;
-    case LINE_FOLLOWING: if (crashed) {
+    case LINE_FOLLOWING: 
+      if (crashed) 
+      {
         mode = MANUAL_OPERATION;
         car.stop();
         break;
@@ -109,33 +161,7 @@ void loop() {
   }
 }
 
-void serialEvent() {
-  String input = Serial.readStringUntil('X');
-  if(input == "status?")
-  {
-    requestAvailable = true;
-  }
-  else
-  {
-  commandAvailable = true;
-  command = input;
-  }
-}
-
-void startDebugSession() {
-  pinMode(DebugLED, OUTPUT);
-
-  for (int i = 0; i < 3; i++) {
-    digitalWrite(DebugLED, HIGH);
-    delay(500);
-    digitalWrite(DebugLED, LOW);
-    delay(500);
-  }
-
-  Serial.println("Debugging enabled");
-}
-
-void controlRobot(String input) {
+void controlSystems(String input) {
   char commandType = input.charAt(0);
   input.remove(0, 1);
 
@@ -152,42 +178,42 @@ void controlRobot(String input) {
   }
 }
 
-void toStateMessage(bool state)
+ void sendDashboardData(void)
+ {
+String testSpeed = String( ( (millis()%6) + 1 ) + ( ( millis()%10 ) * 0.1 ) );
+String testVoltage = "1.1";
+String testLowVoltageFlag = toStateMessage(false);
+String lineFollowingState = toStateMessage(mode == LINE_FOLLOWING);
+String obstacleAvoidingState = toStateMessage(mode == OBSTACLE_AVOIDING);
+String lightState = toStateMessage(digitalRead(DebugLED));
+
+  int numberOfItems = 6;
+  String items[numberOfItems] = {testSpeed,testVoltage,testLowVoltageFlag,lineFollowingState,obstacleAvoidingState,lightState};
+
+int lastItemIndex = numberOfItems - 1;
+  for(int i = 0; i < numberOfItems; i++)
+  {
+    btModule.print(items[i]);
+    if(i < lastItemIndex)
+    {
+    btModule.print("|");
+    }
+  }
+   btModule.println();
+ 
+ }
+
+ String toStateMessage(bool state)
 {
   if(state)
   {
-   Serial.print("On"); 
+   return "On"; 
   }
   else
   {
-    Serial.print("Off"); 
+    return "Off"; 
   }
 }
-
- void sendDashboardData(void)
- {
-  int numberOfItems = 6;
-
-  //Speed
-  Serial.print(1.1);
-  Serial.print("|");
-  //Voltage
-  Serial.print(1.1);
-  Serial.print("|");
-  //Low Voltage Flag
-  toStateMessage(false);
-  Serial.print("|");
-  //Line Following
-  toStateMessage(mode == LINE_FOLLOWING);
-  Serial.print("|");
-  //Collision Detection
-  toStateMessage(mode == OBSTACLE_AVOIDING);
-  Serial.print("|");
-  //Led state
-  toStateMessage(digitalRead(DebugLED));
-
-  Serial.println();
- }
 
 void setSpeed(String input){
 int value = input.toInt();
@@ -201,11 +227,6 @@ void controlCar(String input) {
   char firstDirectionLetter = input.charAt(0);
   input.remove(0, 1);
   char secondDirectionLetter = 0;
-
-#ifdef DEBUG
-  Serial.println("Received Contol Signal");
-  Serial.println(firstDirectionLetter);
-#endif
 
   switch (firstDirectionLetter) {
     case 'S': car.stop();

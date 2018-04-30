@@ -6,34 +6,31 @@
 class Speedometer
 {
 public:
-Speedometer(int Led, int leftSensor, int rightSensor);
+Speedometer(int sensorPin);
 
-int getLeftSpeed(void); //mm/s
-int getRightSpeed(void); //mm/s
-int getSpeed(void);
+int getSpeed(void) const; //mm/s
 
 void update(void);
-void enterCalibrationMode(void);
-void endCalibrationMode(void);
+void calibrate(void);
+bool isCalibrating(void);
 
 private:
-int ledPin;
-int LeftPin;
-int rightPin;
-
-bool calibrating;
-
+int sensor;
 const int stepDistance = 2; //mm
-Timer updateTimer;
-int updateInterval
-//LeftSide
-int leftSpeed;
-int leftMinReading;
-int leftMaxReading;
+int speed;
+int minReading;
+int maxReading;
+int previousMark;
 
-int rightSpeed;
-int rightMinReading;
-int rightMaxReading;
+Timer updateTimer;
+Timer stopWatch;
+Timer calibrationTimer;
+
+enum states{WHITE_MARK, BLACK_MARK, NO_MARK_DETECTED};
+int calculateMark(int reading);
+void calculateSpeed(int mark);
+void measureMinMaxValues(int reading);
+
 };  
 
 #endif
